@@ -1,10 +1,10 @@
 #include "qlegodevicescanner.h"
 #include "qlegocommon.h"
+#include <QtBluetooth/QBluetoothDeviceDiscoveryAgent>
+#include <QtBluetooth/QBluetoothDeviceInfo>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QMetaEnum>
 #include <QtCore/QString>
-#include <QtBluetooth/QBluetoothDeviceInfo>
-#include <QtBluetooth/QBluetoothDeviceDiscoveryAgent>
 
 Q_LOGGING_CATEGORY(scannerLogger, "lego.scanner");
 
@@ -66,7 +66,7 @@ static QStringList deviceNames({ "LEGO Move Hub", "Technic" });
 /*!
     Constructs a QLegoDeviceScanner object.
 */
-QLegoDeviceScanner::QLegoDeviceScanner(QObject *parent)
+QLegoDeviceScanner::QLegoDeviceScanner(QObject* parent)
     : QObject(parent)
     , m_agent(new QBluetoothDeviceDiscoveryAgent)
     , m_scanning(false)
@@ -104,7 +104,7 @@ void QLegoDeviceScanner::scan()
     m_agent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
 }
 
-void QLegoDeviceScanner::addDevice(const QBluetoothDeviceInfo &info)
+void QLegoDeviceScanner::addDevice(const QBluetoothDeviceInfo& info)
 {
     /*
      * **TODO**: NEED TO FIX THE NAMES!!!
@@ -120,7 +120,7 @@ void QLegoDeviceScanner::addDevice(const QBluetoothDeviceInfo &info)
         }
 #endif
 
-        QLegoDevice *device = QLegoDevice::createDevice(info);
+        QLegoDevice* device = QLegoDevice::createDevice(info);
 
         QObject::connect(device, &QLegoDevice::disconnected, [this, device]() {
             m_deviceCount = m_deviceCount > 0 ? m_deviceCount - 1 : 0;

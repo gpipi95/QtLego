@@ -2,12 +2,12 @@
 #include "qlegomotor.h"
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QLoggingCategory>
 #include <QTimer>
 #include <QtDebug>
 #include <QtEndian>
-#include <QLoggingCategory>
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
     QCoreApplication app(argc, argv);
     QLoggingCategory::setFilterRules(QStringLiteral("lego.*=true"));
@@ -22,12 +22,12 @@ int main(int argc, char *argv[])
         }
     });
 
-    QObject::connect(scanner, &QLegoDeviceScanner::errorMessage, [scanner](const QString &msg) {
+    QObject::connect(scanner, &QLegoDeviceScanner::errorMessage, [scanner](const QString& msg) {
         qWarning() << msg;
         qApp->exit(1);
     });
 
-    QObject::connect(scanner, &QLegoDeviceScanner::deviceFound, [=](QLegoDevice *device) {
+    QObject::connect(scanner, &QLegoDeviceScanner::deviceFound, [=](QLegoDevice* device) {
         qDebug() << "  Address:" << device->address();
         qDebug() << "  Firmware:" << device->firmware();
 
@@ -37,15 +37,19 @@ int main(int argc, char *argv[])
         });
 
         // Disconnect after 10 seconds.
-        QTimer::singleShot(10000, device, &QLegoDevice::disconnect);
+        //        QTimer::singleShot(10000, device, &QLegoDevice::disconnect);
 
         // Run the right motor.
-        QLegoMotor *rightMotor = device->waitForAttachedMotor("B");
-        rightMotor->setPower(50);
-        qDebug() << "  Waiting 3 seconds";
-        device->wait(3000);
-        qDebug() << "  done waiting";
-        rightMotor->brake();
+        QLegoMotor* rightMotor = device->waitForAttachedMotor("B");
+        if (!rightMotor) {
+            qDebug() << "right motor is null.";
+        } else {
+            rightMotor->setPower(50);
+            qDebug() << "  Waiting 3 seconds";
+            device->wait(3000);
+            qDebug() << "  done waiting";
+            rightMotor->brake();
+        }
     });
 
     scanner->scan();

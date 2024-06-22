@@ -1,42 +1,43 @@
 #include "qlegodevice.h"
-#include "qlegomotor.h"
 #include "qlegocommon.h"
+#include "qlegomotor.h"
+#include <QThread>
+#include <QtBluetooth/QBluetoothDeviceInfo>
+#include <QtBluetooth/QLowEnergyController>
+#include <QtBluetooth/QLowEnergyService>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEventLoop>
-#include <QtCore/QString>
-#include <QtCore/QMap>
 #include <QtCore/QList>
+#include <QtCore/QLoggingCategory>
+#include <QtCore/QMap>
+#include <QtCore/QString>
+#include <QtCore/QThread>
 #include <QtCore/QTimer>
 #include <QtCore/QtEndian>
-#include <QtCore/QLoggingCategory>
-#include <QtCore/QThread>
-#include <QtBluetooth/QBluetoothDeviceInfo>
-#include <QtBluetooth/QLowEnergyService>
-#include <QtBluetooth/QLowEnergyController>
 
 Q_LOGGING_CATEGORY(deviceLogger, "lego.device");
 
 using AttachedDeviceType = QLegoAttachedDevice::DeviceType;
 using DeviceType = QLegoDevice::DeviceType;
 
-static inline QLegoAttachedDevice *createAttachment(AttachedDeviceType deviceType, quint8 portId)
+static inline QLegoAttachedDevice* createAttachment(AttachedDeviceType deviceType, quint8 portId)
 {
     switch (deviceType) {
-        case AttachedDeviceType::MoveHubMediumLinearMotor:
-            return new QLegoMotor(deviceType, portId);
-        case AttachedDeviceType::Unknown:
-        default:
-            return new QLegoAttachedDevice(deviceType, portId);
+    case AttachedDeviceType::MoveHubMediumLinearMotor:
+        return new QLegoMotor(deviceType, portId);
+    case AttachedDeviceType::Unknown:
+    default:
+        return new QLegoAttachedDevice(deviceType, portId);
     }
 }
 
 static inline PortMap getPortMap(DeviceType deviceType)
 {
     switch (deviceType) {
-        case DeviceType::BoostHub:
-            return BoostPortMap;
-        default:
-            return PortMap();
+    case DeviceType::BoostHub:
+        return BoostPortMap;
+    default:
+        return PortMap();
     }
 }
 
@@ -119,7 +120,7 @@ static inline QString getPortNameForPortId(PortMap portMap, int portId)
 
     Most users will not use this function. Please use \l{QLegoDeviceScanner} instead.
 */
-QLegoDevice::QLegoDevice(QObject *parent)
+QLegoDevice::QLegoDevice(QObject* parent)
     : QObject(parent)
     , m_name("")
     , m_firmware("0.0.00.0000")
@@ -140,12 +141,7 @@ QLegoDevice::QLegoDevice(QObject *parent)
 
 QLegoDevice::~QLegoDevice()
 {
-    if (m_controller != nullptr) {
-        delete m_controller;
-    }
-    if (m_service != nullptr) {
-        delete m_service;
-    }
+    requestPower(false);
 }
 
 /*!
@@ -213,9 +209,9 @@ QLegoDevice::DeviceType QLegoDevice::deviceType() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
-QLegoDevice *QLegoDevice::createDevice(const QBluetoothDeviceInfo &deviceInfo)
+QLegoDevice* QLegoDevice::createDevice(const QBluetoothDeviceInfo& deviceInfo)
 {
-    QLegoDevice *device = new QLegoDevice();
+    QLegoDevice* device = new QLegoDevice();
     device->m_deviceInfo = deviceInfo;
     device->m_address = getAddress(deviceInfo);
     return device;
@@ -229,7 +225,7 @@ void QLegoDevice::connectToDevice()
         return;
     }
 
-    m_controller = QLowEnergyController::createCentral(m_deviceInfo);
+    m_controller = QLowEnergyController::createCentral(m_deviceInfo, this);
 
     // clang-format off
     connect(m_controller, &QLowEnergyController::connected, this, &QLegoDevice::deviceConnected);
@@ -245,14 +241,12 @@ void QLegoDevice::connectToDevice()
 
 void QLegoDevice::errorReceived(QLowEnergyController::Error error)
 {
-    Q_UNUSED(error)
-    // qWarning() << "Error: " << controller->errorString();
+    qWarning() << "Error: " << m_controller->errorString();
 }
 
 void QLegoDevice::deviceConnected()
 {
-    auto controller = qobject_cast<QLowEnergyController *>(sender());
-    controller->discoverServices();
+    m_controller->discoverServices();
 }
 
 void QLegoDevice::deviceDisconnected()
@@ -267,62 +261,47 @@ void QLegoDevice::serviceScanDone()
         return;
     }
 
-    const auto ids = m_deviceInfo.manufacturerIds();
-    bool found = false;
-    for (auto id : ids) {
-        // Not 100% sure about this; others used manufacturerData[3]
-        const auto data = m_deviceInfo.manufacturerData(id);
-        const auto chars = data.constData();
-        const quint8 ch = chars[1];
-        switch (ch) {
-            case ManufacturerData::MoveHub:
-                m_deviceType = DeviceType::BoostHub;
-                m_portMap = BoostPortMap;
-                break;
-            case ManufacturerData::TechnicHub:
-                m_deviceType = DeviceType::TechnicHub;
-                break;
-            default:
-                m_deviceType = DeviceType::UnknownDevice;
-                break;
-        }
-    }
+    QTimer::singleShot(200, [this]() { connectToService(); });
 }
 
-void QLegoDevice::addLowEnergyService(const QBluetoothUuid &uuid)
+void QLegoDevice::addLowEnergyService(const QBluetoothUuid& uuid)
 {
-    auto controller = qobject_cast<QLowEnergyController *>(sender());
-    auto service = controller->createServiceObject(uuid);
+    qDebug() << "find service" << uuid.toString();
+    QLowEnergyService* service = m_controller->createServiceObject(uuid, this);
+    if (!service) {
+        qWarning() << "Cannot create service for uuid";
+        return;
+    }
     if (getServiceUuid(service) != LPF2_SERVICE) {
         return;
     }
+
     m_service = service;
     qCDebug(deviceLogger) << "UUID:" << getServiceUuid(m_service);
-    connectToService(m_service);
 }
 
-void QLegoDevice::connectToService(QLowEnergyService *service)
+void QLegoDevice::connectToService()
 {
-    if (service->state() == QLowEnergyService::DiscoveryRequired) {
+    if (m_service->state() == QLowEnergyService::DiscoveryRequired) {
+        qDebug() << "connecting to m_service";
         // clang-format off
-        connect(service, &QLowEnergyService::stateChanged, this, &QLegoDevice::serviceDetailsDiscovered);
-        // connect(service, &QLowEnergyService::characteristicChanged, this, &QLegoDevice::updateValue);
-        // connect(service, &QLowEnergyService::descriptorWritten, this, &QLegoDevice::confirmedDescriptorWrite);
-        service->discoverDetails();
+        connect(m_service, &QLowEnergyService::stateChanged, this, &QLegoDevice::serviceDetailsDiscovered);
+        connect(m_service,QOverload<QLowEnergyService::ServiceError>::of( &QLowEnergyService::error), this, &QLegoDevice::serviceError);
+        m_service->discoverDetails();
         // clang-format on
     } else {
-        readDeviceCharacteristics(service);
+        readDeviceCharacteristics(m_service);
     }
 }
 
 void QLegoDevice::serviceDetailsDiscovered(QLowEnergyService::ServiceState newState)
 {
-    if (newState != QLowEnergyService::ServiceDiscovered) {
+
+    auto service = qobject_cast<QLowEnergyService*>(sender());
+    if (!service) {
         return;
     }
-
-    auto service = qobject_cast<QLowEnergyService *>(sender());
-    if (!service) {
+    if (newState != QLowEnergyService::ServiceDiscovered) {
         return;
     }
 
@@ -362,7 +341,7 @@ void QLegoDevice::requestHubPropertyReports(quint8 value)
     send(bytes);
 }
 
-void QLegoDevice::send(const QByteArray &bytes)
+void QLegoDevice::send(const QByteArray& bytes)
 {
     QByteArray message;
     const quint8 size = bytes.size() + 2;
@@ -372,15 +351,20 @@ void QLegoDevice::send(const QByteArray &bytes)
     for (int i = 0; i < bytes.size(); i++) {
         message[i + 2] = bytes[i];
     }
-    // qCDebug(deviceLogger) << "send:" << message.toHex();
+    qCDebug(deviceLogger) << "send:" << message.toHex();
     m_service->writeCharacteristic(m_char, message);
 }
 
-void QLegoDevice::readDeviceCharacteristics(QLowEnergyService *service)
+void QLegoDevice::serviceError(QLowEnergyService::ServiceError error)
+{
+    qDebug() << "service error:" << error;
+}
+
+void QLegoDevice::readDeviceCharacteristics(QLowEnergyService* service)
 {
     const QList<QLowEnergyCharacteristic> chars = service->characteristics();
 
-    for (const QLowEnergyCharacteristic &ch : chars) {
+    for (const QLowEnergyCharacteristic& ch : chars) {
         if (getUuid(ch.uuid()) == LPF2_CHARACTERISTIC) {
             m_char = ch;
         }
@@ -395,12 +379,14 @@ void QLegoDevice::readDeviceCharacteristics(QLowEnergyService *service)
     if (notificationDesc.isValid()) {
         service->writeDescriptor(notificationDesc, QByteArray::fromHex("0100"));
     }
-
+    qDebug() << "read characteristcs.";
     connect(service, &QLowEnergyService::characteristicChanged, this, &QLegoDevice::parseMessage);
 
     // this._bleDevice.discoverCharacteristicsForService(BLEService.LPF2_HUB);
     // this._bleDevice.subscribeToCharacteristic(BLECharacteristic.LPF2_ALL, _parseMessage);
 
+    // power on
+    requestPower(true);
     // Button reports
     requestHubPropertyReports(0x02);
     // Firmware
@@ -420,7 +406,7 @@ void QLegoDevice::readDeviceCharacteristics(QLowEnergyService *service)
     });
 }
 
-void QLegoDevice::parseMessage(const QLowEnergyCharacteristic &ch, const QByteArray &data)
+void QLegoDevice::parseMessage(const QLowEnergyCharacteristic& ch, const QByteArray& data)
 {
     Q_UNUSED(ch)
     if (!data.isEmpty()) {
@@ -442,26 +428,26 @@ void QLegoDevice::parseMessage(const QLowEnergyCharacteristic &ch, const QByteAr
 
         const quint8 cmd = msg[2];
         switch (cmd) {
-            case 0x01:
-                parseHubPropertyResponse(message);
-                break;
-            case 0x04:
-                parsePortMessage(message);
-                break;
-            case 0x43:
-                parsePortInformationResponse(message);
-                break;
-            case 0x44:
-                parseModeInformationResponse(message);
-                break;
-            case 0x45:
-                parseSensorMessage(message);
-                break;
-            case 0x82:
-                parsePortAction(message);
-                break;
-            default:
-                break;
+        case 0x01:
+            parseHubPropertyResponse(message);
+            break;
+        case 0x04:
+            parsePortMessage(message);
+            break;
+        case 0x43:
+            parsePortInformationResponse(message);
+            break;
+        case 0x44:
+            parseModeInformationResponse(message);
+            break;
+        case 0x45:
+            parseSensorMessage(message);
+            break;
+        case 0x82:
+            parsePortAction(message);
+            break;
+        default:
+            break;
         }
 
         if (m_messageBuffer.size() > 0) {
@@ -470,7 +456,7 @@ void QLegoDevice::parseMessage(const QLowEnergyCharacteristic &ch, const QByteAr
     }
 }
 
-void QLegoDevice::parseHubPropertyResponse(const QByteArray &message)
+void QLegoDevice::parseHubPropertyResponse(const QByteArray& message)
 {
     const auto msg = message.constData();
     const auto report = message[3];
@@ -517,7 +503,7 @@ void QLegoDevice::parseHubPropertyResponse(const QByteArray &message)
     }
 }
 
-void QLegoDevice::parsePortMessage(const QByteArray &message)
+void QLegoDevice::parsePortMessage(const QByteArray& message)
 {
     const quint8 portId = message[3];
     const quint8 event = message[4];
@@ -537,47 +523,47 @@ void QLegoDevice::parsePortMessage(const QByteArray &message)
     const auto deviceType = static_cast<AttachedDeviceType>(deviceNum);
 
     switch (event) {
-        case 0x00: {
-            // Device detachment
-            if (m_attachedDevices.contains(portId)) {
-                const auto attachment = m_attachedDevices[portId];
-                // TODO: Should m_attachedDevices[portId] be deleted first?
-                m_attachedDevices.remove(portId);
-                emit deviceDetached(attachment);
-                if (m_virtualPorts.contains(portId)) {
-                    const auto portName = getPortNameForPortId(m_portMap, portId);
-                    if (!portName.isEmpty()) {
-                        m_portMap.remove(portName);
-                    }
-                    m_virtualPorts.removeAll(portId);
+    case 0x00: {
+        // Device detachment
+        if (m_attachedDevices.contains(portId)) {
+            const auto attachment = m_attachedDevices[portId];
+            // TODO: Should m_attachedDevices[portId] be deleted first?
+            m_attachedDevices.remove(portId);
+            emit deviceDetached(attachment);
+            if (m_virtualPorts.contains(portId)) {
+                const auto portName = getPortNameForPortId(m_portMap, portId);
+                if (!portName.isEmpty()) {
+                    m_portMap.remove(portName);
                 }
+                m_virtualPorts.removeAll(portId);
             }
-            break;
         }
-        case 0x01: {
-            // Device attachment
-            const auto attachment = createAttachment(deviceType, portId);
-            if (attachment != nullptr) {
-                attachDevice(portId, attachment);
-            }
-            break;
+        break;
+    }
+    case 0x01: {
+        // Device attachment
+        const auto attachment = createAttachment(deviceType, portId);
+        if (attachment != nullptr) {
+            attachDevice(portId, attachment);
         }
-        case 0x02: {
-            // Virtual port creation
-            const auto firstPortName = getPortNameForPortId(m_portMap, message[7]);
-            const auto secondPortName = getPortNameForPortId(m_portMap, message[8]);
-            const auto virtualPortName = firstPortName + secondPortName;
-            const quint8 virtualPortId = message[3];
-            m_portMap[virtualPortName] = virtualPortId;
-            m_virtualPorts.append(virtualPortId);
-            const auto attachment = createAttachment(deviceType, virtualPortId);
-            if (attachment != nullptr) {
-                attachDevice(virtualPortId, attachment);
-            }
-            break;
+        break;
+    }
+    case 0x02: {
+        // Virtual port creation
+        const auto firstPortName = getPortNameForPortId(m_portMap, message[7]);
+        const auto secondPortName = getPortNameForPortId(m_portMap, message[8]);
+        const auto virtualPortName = firstPortName + secondPortName;
+        const quint8 virtualPortId = message[3];
+        m_portMap[virtualPortName] = virtualPortId;
+        m_virtualPorts.append(virtualPortId);
+        const auto attachment = createAttachment(deviceType, virtualPortId);
+        if (attachment != nullptr) {
+            attachDevice(virtualPortId, attachment);
         }
-        default:
-            break;
+        break;
+    }
+    default:
+        break;
     }
 }
 
@@ -597,7 +583,7 @@ void QLegoDevice::sendPortInformationRequest(quint8 port)
     send(batch2); // Mode combinations
 }
 
-void QLegoDevice::parsePortInformationResponse(const QByteArray &message)
+void QLegoDevice::parsePortInformationResponse(const QByteArray& message)
 {
     const auto msg = message.constData();
     const quint8 port = msg[3];
@@ -629,13 +615,13 @@ void QLegoDevice::sendModeInformationRequest(quint8 port, quint8 mode, quint8 ty
     send(bytes);
 }
 
-void QLegoDevice::parseModeInformationResponse(const QByteArray &message)
+void QLegoDevice::parseModeInformationResponse(const QByteArray& message)
 {
     Q_UNUSED(message)
     // Doesn't set any values.
 }
 
-void QLegoDevice::parsePortAction(const QByteArray &message)
+void QLegoDevice::parsePortAction(const QByteArray& message)
 {
     const auto msg = message.constData();
     const quint8 portId = msg[3];
@@ -652,7 +638,7 @@ void QLegoDevice::parsePortAction(const QByteArray &message)
     */
 }
 
-void QLegoDevice::parseSensorMessage(const QByteArray &message)
+void QLegoDevice::parseSensorMessage(const QByteArray& message)
 {
     const auto msg = message.constData();
     const quint8 portId = message[3];
@@ -666,7 +652,7 @@ void QLegoDevice::parseSensorMessage(const QByteArray &message)
     */
 }
 
-void QLegoDevice::attachDevice(int portId, QLegoAttachedDevice *device)
+void QLegoDevice::attachDevice(int portId, QLegoAttachedDevice* device)
 {
     if (m_attachedDevices.contains(portId) && m_attachedDevices[portId]->type() == device->type()) {
         return;
@@ -682,19 +668,31 @@ void QLegoDevice::attachDevice(int portId, QLegoAttachedDevice *device)
     emit deviceAttached(device);
 }
 
-QLegoAttachedDevice *QLegoDevice::waitForDeviceByName(const QString &name)
+void QLegoDevice::requestPower(bool isOn)
 {
-    QLegoAttachedDevice *attachment = nullptr;
+    QByteArray bytes;
+    bytes.resize(2);
+    bytes[0] = 0x02;
+    if (isOn) {
+        bytes[1] = 0x03;
+    } else {
+        bytes[1] = 0x04;
+    }
+    send(bytes);
+}
+
+QLegoAttachedDevice* QLegoDevice::waitForDeviceByName(const QString& name)
+{
+    QLegoAttachedDevice* attachment = nullptr;
     QMetaObject::Connection connection;
     const int timeout = 5000;
-    QTimer *timer = new QTimer(this);
+    QTimer* timer = new QTimer(this);
 #ifdef NO_USE_PROCESS_EVENTS
     // This may cause problems if used outside the main GUI thread?
     QEventLoop loop;
 #else
     bool waiting = true;
-    const QEventLoop::ProcessEventsFlags flags =
-            QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents;
+    const QEventLoop::ProcessEventsFlags flags = QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents;
 #endif
 
     // Check before we start the loop.
@@ -704,7 +702,7 @@ QLegoAttachedDevice *QLegoDevice::waitForDeviceByName(const QString &name)
     }
 
 #ifdef NO_USE_PROCESS_EVENTS
-    const auto callback = [this, &attachment, loop, name](QLegoAttachedDevice *device) {
+    const auto callback = [this, &attachment, loop, name](QLegoAttachedDevice* device) {
         const auto portName = getPortNameForPortId(m_portMap, device->portId());
         if (!portName.isEmpty() && portName == name) {
             attachment = device;
@@ -713,7 +711,7 @@ QLegoAttachedDevice *QLegoDevice::waitForDeviceByName(const QString &name)
     };
     connect(timer, &QTimer::timeout, this, [loop]() { loop.exit(); });
 #else
-    const auto callback = [this, &attachment, &waiting, name](QLegoAttachedDevice *device) {
+    const auto callback = [this, &attachment, &waiting, name](QLegoAttachedDevice* device) {
         const auto portName = getPortNameForPortId(m_portMap, device->portId());
         if (!portName.isEmpty() && portName == name) {
             attachment = device;
@@ -747,10 +745,10 @@ QLegoAttachedDevice *QLegoDevice::waitForDeviceByName(const QString &name)
 
     This function is synchronous, but it doesn't block the thread.
 */
-QLegoMotor *QLegoDevice::waitForAttachedMotor(const QString &port)
+QLegoMotor* QLegoDevice::waitForAttachedMotor(const QString& port)
 {
-    QLegoAttachedDevice *device = waitForDeviceByName(port);
-    return qobject_cast<QLegoMotor *>(device);
+    QLegoAttachedDevice* device = waitForDeviceByName(port);
+    return qobject_cast<QLegoMotor*>(device);
 }
 
 /*!
@@ -765,7 +763,7 @@ void QLegoDevice::wait(const int usecs)
     QThread::usleep(usecs);
 #else
     bool waiting = true;
-    QTimer *timer = new QTimer(this);
+    QTimer* timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, [&waiting]() { waiting = false; });
     timer->setSingleShot(true);
     timer->start(usecs);
