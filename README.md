@@ -12,6 +12,9 @@ A Qt library for connecting and controlling LEGO® devices.
 
 QtLego is a library for connecting to LEGO devices and querying and controlling peripherals attached to those devices. Currently only LEGO Powered UP hubs are supported, but it should be possible to add support for Mindstorms and Spike Prime hubs.
 
+## Reference
+For [lego bluetooth protocol](https://github.com/LEGO/lego-ble-wireless-protocol-docs)
+
 ## Using
 
 ### API
