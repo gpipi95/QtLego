@@ -97,11 +97,13 @@ static inline int roundAngleToNearest90(int angle)
 
 static PortMap BoostPortMap = { { "A", 0 },
                                 { "B", 1 },
-                                { "C", 2 },
-                                { "D", 3 },
+                                { "DISTANCE_SENSOR", 2 },
+                                { "HEAD_MOTOR", 3 },
+                                { "AB", 16 },
                                 { "HUB_LED", 50 },
                                 { "TILT_SENSOR", 58 },
                                 { "CURRENT_SENSOR", 59 },
+                                { "UNKNOWN", 66 },
                                 { "VOLTAGE_SENSOR", 60 } };
 
 static inline QString getAddress(const QBluetoothDeviceInfo &info)

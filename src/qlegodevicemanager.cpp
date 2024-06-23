@@ -67,6 +67,7 @@ void QLegoDeviceManager::createDevices(QList<QBluetoothDeviceInfo> legoDevicesIn
                                              << "Addr: " << d->address() << "\n"
                                              << "Type: " << d->deviceType() << "\n"
                                              << "Firmware: " << d->firmware();
+                emit scanFinished();
             });
 
             QObject::connect(device, &QLegoDevice::disconnected, this, [this]() {

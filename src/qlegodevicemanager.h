@@ -22,6 +22,8 @@ private slots:
     void createDevices(QList<QBluetoothDeviceInfo> legoDevicesInfo);
 
 signals:
+    void scanFinished();
+
 private:
     QList<QLegoDevice*> m_devices;
     QLegoDeviceScanner* m_scanner;

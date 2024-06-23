@@ -25,6 +25,8 @@ static inline QLegoAttachedDevice* createAttachment(AttachedDeviceType deviceTyp
     switch (deviceType) {
     case AttachedDeviceType::MoveHubMediumLinearMotor:
         return new QLegoMotor(deviceType, portId);
+    case AttachedDeviceType::MediumLinearMotor:
+        return new QLegoMotor(deviceType, portId);
     case AttachedDeviceType::Unknown:
     default:
         return new QLegoAttachedDevice(deviceType, portId);
@@ -409,10 +411,10 @@ void QLegoDevice::readDeviceCharacteristics(QLowEnergyService* service)
     // Hardware
     requestHubPropertyValue(0x04);
     // RSSI
-    requestHubPropertyReports(0x05);
+    //    requestHubPropertyReports(0x05);
     requestHubPropertyValue(0x05);
     // Battery level
-    requestHubPropertyReports(0x06);
+    //    requestHubPropertyReports(0x06);
     requestHubPropertyValue(0x06);
     // MAC Address
     requestHubPropertyValue(0x0D);
@@ -531,8 +533,6 @@ void QLegoDevice::parsePortMessage(const QByteArray& message)
     const quint8 event = message[4];
     int deviceNum = 0;
 
-    // qCDebug(deviceLogger) << "parsePortMessage:" << event << message.toHex();
-
     if (event) {
         const auto hexStr = message.mid(5, 2).toHex();
         bool ok;
@@ -543,6 +543,7 @@ void QLegoDevice::parsePortMessage(const QByteArray& message)
     }
 
     const auto deviceType = static_cast<AttachedDeviceType>(deviceNum);
+    qCDebug(deviceLogger) << "parsePortMessage:" << event << portId << deviceNum << deviceType;
 
     switch (event) {
     case 0x00: {
@@ -756,6 +757,38 @@ QLegoAttachedDevice* QLegoDevice::waitForDeviceByName(const QString& name)
     QObject::disconnect(connection);
 
     return attachment;
+}
+
+QLegoMotor* QLegoDevice::getMotorA()
+{
+    if (m_attachedDevices.contains(m_portMap["A"])) {
+        return dynamic_cast<QLegoMotor*>(m_attachedDevices[m_portMap["A"]]);
+    }
+    return nullptr;
+}
+
+QLegoMotor* QLegoDevice::getMotorB()
+{
+    if (m_attachedDevices.contains(m_portMap["B"])) {
+        return dynamic_cast<QLegoMotor*>(m_attachedDevices[m_portMap["B"]]);
+    }
+    return nullptr;
+}
+
+QLegoMotor* QLegoDevice::getMotorSyncAB()
+{
+    if (m_attachedDevices.contains(m_portMap["AB"])) {
+        return dynamic_cast<QLegoMotor*>(m_attachedDevices[m_portMap["AB"]]);
+    }
+    return nullptr;
+}
+
+QLegoMotor* QLegoDevice::getMotorHead()
+{
+    if (m_attachedDevices.contains(m_portMap["HEAD_MOTOR"])) {
+        return dynamic_cast<QLegoMotor*>(m_attachedDevices[m_portMap["HEAD_MOTOR"]]);
+    }
+    return nullptr;
 }
 
 /*!

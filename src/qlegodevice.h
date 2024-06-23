@@ -64,6 +64,10 @@ public:
 
     QLegoAttachedDevice* waitForDeviceByName(const QString& name);
     // Q_INVOKABLE QLegoAttachedDevice* waitForDeviceByType(const DeviceType deviceType);
+    QLegoMotor* getMotorA();
+    QLegoMotor* getMotorB();
+    QLegoMotor* getMotorSyncAB();
+    QLegoMotor* getMotorHead();
 
 public Q_SLOTS:
     void connectToDevice();

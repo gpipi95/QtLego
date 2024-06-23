@@ -71,7 +71,7 @@ QLegoDeviceScanner::QLegoDeviceScanner(QObject* parent)
     , m_agent(new QBluetoothDeviceDiscoveryAgent)
     , m_scanning(false)
 {
-    m_agent->setLowEnergyDiscoveryTimeout(5000);
+    m_agent->setLowEnergyDiscoveryTimeout(4000);
 
     // clang-format off
     connect(m_agent, &QBluetoothDeviceDiscoveryAgent::deviceDiscovered, this, &QLegoDeviceScanner::addDevice);
