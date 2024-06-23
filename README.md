@@ -1,12 +1,9 @@
 # QtLego
-
-[![Action Status](https://github.com/Symbitic/QtLego/workflows/build/badge.svg)](https://github.com/Symbitic/QtLego/actions)
+This project is forked from [Symbitic's QtLego](https://github.com/Symbitic/QtLego)
 
 A Qt library for connecting and controlling LEGO® devices.
 
 **THIS LIBRARY IS STILL IN ITS INFANCY! IT CAN ONLY HANDLE BASIC CONNECTIONS AND MOTOR COMMANDS!! EXPECT BREAKING CHANGES!!!**
-
-[![BuyMeACoffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoff.ee/qh0rXkiCd)
 
 ## Introduction
 
@@ -30,8 +27,7 @@ QObject::connect(scanner, &QLegoDeviceScanner::deviceFound, [=](QLegoDevice *dev
   QTimer::singleShot(10000, device, &QLegoDevice::disconnect); // Disconnect after 10 seconds.
 });
 ```
-
-See [examples/helloworld.cpp](./examples/helloworld.cpp) for a more complete example.
+See [boostApp/boost.cpp](./boostApp/boost.cpp) for lego boost example.
 
 ## License
 
