@@ -70,7 +70,6 @@ QLegoDeviceScanner::QLegoDeviceScanner(QObject* parent)
     : QObject(parent)
     , m_agent(new QBluetoothDeviceDiscoveryAgent)
     , m_scanning(false)
-    , m_deviceCount(0)
 {
     m_agent->setLowEnergyDiscoveryTimeout(5000);
 
@@ -78,6 +77,7 @@ QLegoDeviceScanner::QLegoDeviceScanner(QObject* parent)
     connect(m_agent, &QBluetoothDeviceDiscoveryAgent::deviceDiscovered, this, &QLegoDeviceScanner::addDevice);
     connect(m_agent, QOverload<QBluetoothDeviceDiscoveryAgent::Error>::of(&QBluetoothDeviceDiscoveryAgent::error), this, &QLegoDeviceScanner::deviceScanError);
     connect(m_agent, &QBluetoothDeviceDiscoveryAgent::finished, this, &QLegoDeviceScanner::deviceScanFinished);
+    connect(m_agent, &QBluetoothDeviceDiscoveryAgent::canceled, this, [this](){ m_scanning = false; });
     // clang-format on
 }
 
@@ -102,53 +102,44 @@ void QLegoDeviceScanner::scan()
 {
     m_scanning = true;
     m_agent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
+    emit scanningUpdated();
+}
+
+void QLegoDeviceScanner::stopScan()
+{
+    if (m_scanning || m_agent->isActive()) {
+        m_agent->stop();
+        m_scanning = false;
+        emit scanningUpdated();
+    }
+}
+
+bool QLegoDeviceScanner::isLegoHub(const QBluetoothDeviceInfo& info)
+{
+    return isLegoHub(info.name());
+}
+bool QLegoDeviceScanner::isLegoHub(const QString& name)
+{
+    // lego boost ok, others not tested
+    foreach (auto n, deviceNames) {
+        if (name.contains(n, Qt::CaseInsensitive)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void QLegoDeviceScanner::addDevice(const QBluetoothDeviceInfo& info)
 {
-    /*
-     * **TODO**: NEED TO FIX THE NAMES!!!
-     */
-    if (info.name().contains("Move Hub", Qt::CaseInsensitive) || info.name().contains("Technic")) {
+    if (isLegoHub(info)) {
         qCDebug(scannerLogger) << "found" << info.name();
-
-#if 0
         const auto address = getAddress(info);
         if (m_addresses.contains(address)) {
             qDebug() << "Device" << address << "already added";
-            // return;
+            return;
+        } else {
+            m_addresses << address;
         }
-#endif
-
-        QLegoDevice* device = QLegoDevice::createDevice(info);
-
-        QObject::connect(device, &QLegoDevice::disconnected, [this, device]() {
-            m_deviceCount = m_deviceCount > 0 ? m_deviceCount - 1 : 0;
-#if 0
-            const auto addr = device->address();
-            m_addresses.removeAll(addr);
-            if (m_addresses.isEmpty()) {
-                qDebug() << "No more devices";
-                emit done();
-            }
-#endif
-            device->deleteLater();
-        });
-
-#if 0
-        m_addresses.append(address);
-
-        device->connectToDevice();
-#endif
-
-        QObject::connect(device, &QLegoDevice::ready, [this, device]() {
-            // TODO: Maybe disconnect() ?
-            emit deviceFound(device);
-        });
-
-        m_deviceCount++;
-
-        device->connectToDevice();
 
 #if 0
         // Deactivate. KEEP! Will use when finished with service scan.
@@ -185,14 +176,16 @@ void QLegoDeviceScanner::deviceScanError(QBluetoothDeviceDiscoveryAgent::Error e
 
 void QLegoDeviceScanner::deviceScanFinished()
 {
+    m_legoDevicesInfo.clear();
     m_scanning = false;
-    emit finished();
-#if 0
-    if (m_addresses.size() == 0) {
-        qDebug() << "No devices found";
-        emit done();
+    emit scanningUpdated();
+    foreach (auto d, m_agent->discoveredDevices()) {
+        if (isLegoHub(d)) {
+            m_legoDevicesInfo << d;
+        }
     }
-#endif
+    emit finished(m_legoDevicesInfo);
+    emit devicesFoundUpdated();
 }
 
 /*!
@@ -201,7 +194,7 @@ void QLegoDeviceScanner::deviceScanFinished()
 */
 int QLegoDeviceScanner::devicesFound() const
 {
-    return m_deviceCount;
+    return m_legoDevicesInfo.size();
 }
 
 /*

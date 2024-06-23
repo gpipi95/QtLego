@@ -14,6 +14,8 @@ add_library(Lego
     qlegoattacheddevice.cpp
     qlegomotor.h
     qlegomotor.cpp
+    qlegodevicemanager.h
+    qlegodevicemanager.cpp
 )
 
 add_library(Qt5::Lego ALIAS Lego)

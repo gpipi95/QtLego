@@ -17,6 +17,8 @@ else()
     option(ENABLE_EXAMPLES "Enable examples" ON)
 endif()
 
+option(ENABLE_BOOST_APP "Enable Lego boost app" ON)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
@@ -42,6 +44,10 @@ else()
 endif()
 
 add_subdirectory(src)
+
+if(ENABLE_BOOST_APP)
+    add_subdirectory(boostApp)
+endif()
 
 if(ENABLE_EXAMPLES)
     add_subdirectory(examples)

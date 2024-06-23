@@ -4,6 +4,7 @@
 #include "qlegodevice.h"
 #include "qlegoglobal.h"
 
+#include <QBluetoothDeviceInfo>
 #include <QList>
 #include <QtBluetooth/QBluetoothDeviceDiscoveryAgent>
 #include <QtCore/QObject>
@@ -11,12 +12,11 @@
 QT_BEGIN_NAMESPACE
 
 QT_FORWARD_DECLARE_CLASS(QString)
-QT_FORWARD_DECLARE_CLASS(QBluetoothDeviceInfo)
 
 class Q_LEGO_EXPORT QLegoDeviceScanner : public QObject {
     Q_OBJECT
-    Q_PROPERTY(bool scanning READ scanning)
-    Q_PROPERTY(int devicesFound READ devicesFound)
+    Q_PROPERTY(bool scanning READ scanning NOTIFY scanningUpdated)
+    Q_PROPERTY(int devicesFound READ devicesFound NOTIFY devicesFoundUpdated)
 public:
     explicit QLegoDeviceScanner(QObject* parent = nullptr);
     ~QLegoDeviceScanner();
@@ -25,6 +25,9 @@ public:
     int devicesFound() const;
 
     Q_INVOKABLE void scan();
+    Q_INVOKABLE void stopScan();
+    bool isLegoHub(const QBluetoothDeviceInfo& info);
+    bool isLegoHub(const QString& name);
 
 private Q_SLOTS:
     void addDevice(const QBluetoothDeviceInfo& info);
@@ -33,13 +36,15 @@ private Q_SLOTS:
 
 Q_SIGNALS:
     void errorMessage(const QString& msg);
-    void deviceFound(QLegoDevice* device);
-    void finished();
+    void finished(QList<QBluetoothDeviceInfo> legoDevicesInfo);
+    void scanningUpdated();
+    void devicesFoundUpdated();
 
 private:
     bool m_scanning;
-    int m_deviceCount;
     QBluetoothDeviceDiscoveryAgent* m_agent;
+    QStringList m_addresses;
+    QList<QBluetoothDeviceInfo> m_legoDevicesInfo;
 };
 
 QT_END_NAMESPACE

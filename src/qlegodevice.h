@@ -81,6 +81,7 @@ private Q_SLOTS:
     void parseMessage(const QLowEnergyCharacteristic& c, const QByteArray& value);
     void send(const QByteArray& bytes);
     void serviceError(QLowEnergyService::ServiceError error);
+    void getDeviceType();
 
 Q_SIGNALS:
     void disconnected();
@@ -98,6 +99,7 @@ private Q_SLOTS:
 private:
     void connectToService();
     void readDeviceCharacteristics(QLowEnergyService* service);
+    void requestHubActionValue(quint8 value);
     void requestHubPropertyValue(quint8 value);
     void requestHubPropertyReports(quint8 value);
     void parseHubPropertyResponse(const QByteArray& message);

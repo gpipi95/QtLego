@@ -214,6 +214,7 @@ QLegoDevice* QLegoDevice::createDevice(const QBluetoothDeviceInfo& deviceInfo)
     QLegoDevice* device = new QLegoDevice();
     device->m_deviceInfo = deviceInfo;
     device->m_address = getAddress(deviceInfo);
+    device->getDeviceType();
     return device;
 }
 
@@ -260,8 +261,7 @@ void QLegoDevice::serviceScanDone()
         emit disconnected();
         return;
     }
-
-    QTimer::singleShot(200, [this]() { connectToService(); });
+    QTimer::singleShot(200, this, [this]() { connectToService(); });
 }
 
 void QLegoDevice::addLowEnergyService(const QBluetoothUuid& uuid)
@@ -283,7 +283,7 @@ void QLegoDevice::addLowEnergyService(const QBluetoothUuid& uuid)
 void QLegoDevice::connectToService()
 {
     if (m_service->state() == QLowEnergyService::DiscoveryRequired) {
-        qDebug() << "connecting to m_service";
+        qCDebug(deviceLogger) << "connecting to m_service";
         // clang-format off
         connect(m_service, &QLowEnergyService::stateChanged, this, &QLegoDevice::serviceDetailsDiscovered);
         connect(m_service,QOverload<QLowEnergyService::ServiceError>::of( &QLowEnergyService::error), this, &QLegoDevice::serviceError);
@@ -308,17 +308,9 @@ void QLegoDevice::serviceDetailsDiscovered(QLowEnergyService::ServiceState newSt
     readDeviceCharacteristics(service);
 }
 
-/*!
-    Drops the connection to a device.
-*/
 void QLegoDevice::disconnect()
 {
-    // TODO: is disconnected() signal needed?
-    QByteArray bytes;
-    bytes.resize(2);
-    bytes[0] = 0x02;
-    bytes[1] = 0x01;
-    send(bytes);
+    requestHubActionValue(0x02);
 }
 
 void QLegoDevice::requestHubPropertyValue(quint8 value)
@@ -360,6 +352,30 @@ void QLegoDevice::serviceError(QLowEnergyService::ServiceError error)
     qDebug() << "service error:" << error;
 }
 
+void QLegoDevice::getDeviceType()
+{
+    const auto ids = m_deviceInfo.manufacturerIds();
+    bool found = false;
+    for (auto id : ids) {
+        // Not 100% sure about this; others used manufacturerData[3]
+        const auto data = m_deviceInfo.manufacturerData(id);
+        const auto chars = data.constData();
+        const quint8 ch = chars[1];
+        switch (ch) {
+        case ManufacturerData::MoveHub:
+            m_deviceType = DeviceType::BoostHub;
+            m_portMap = BoostPortMap;
+            break;
+        case ManufacturerData::TechnicHub:
+            m_deviceType = DeviceType::TechnicHub;
+            break;
+        default:
+            m_deviceType = DeviceType::UnknownDevice;
+            break;
+        }
+    }
+}
+
 void QLegoDevice::readDeviceCharacteristics(QLowEnergyService* service)
 {
     const QList<QLowEnergyCharacteristic> chars = service->characteristics();
@@ -379,31 +395,41 @@ void QLegoDevice::readDeviceCharacteristics(QLowEnergyService* service)
     if (notificationDesc.isValid()) {
         service->writeDescriptor(notificationDesc, QByteArray::fromHex("0100"));
     }
-    qDebug() << "read characteristcs.";
+    qCDebug(deviceLogger) << "read characteristcs.";
     connect(service, &QLowEnergyService::characteristicChanged, this, &QLegoDevice::parseMessage);
+    //    connect(service, &QLowEnergyService::characteristicRead, this, &QLegoDevice::parseMessage);
 
     // this._bleDevice.discoverCharacteristicsForService(BLEService.LPF2_HUB);
     // this._bleDevice.subscribeToCharacteristic(BLECharacteristic.LPF2_ALL, _parseMessage);
 
     // power on
     requestPower(true);
-    // Button reports
-    requestHubPropertyReports(0x02);
     // Firmware
     requestHubPropertyValue(0x03);
     // Hardware
     requestHubPropertyValue(0x04);
     // RSSI
     requestHubPropertyReports(0x05);
+    requestHubPropertyValue(0x05);
     // Battery level
     requestHubPropertyReports(0x06);
+    requestHubPropertyValue(0x06);
     // MAC Address
     requestHubPropertyValue(0x0D);
 
-    QTimer::singleShot(400, this, [this]() {
-        // Wait 400 milliseconds to allow time to receive responses.
+    QTimer::singleShot(800, this, [this]() {
+        // Wait to allow time to receive responses.
         emit ready();
     });
+}
+
+void QLegoDevice::requestHubActionValue(quint8 value)
+{
+    QByteArray bytes;
+    bytes.resize(2);
+    bytes[0] = 0x02;
+    bytes[1] = value;
+    send(bytes);
 }
 
 void QLegoDevice::parseMessage(const QLowEnergyCharacteristic& ch, const QByteArray& data)
@@ -422,7 +448,7 @@ void QLegoDevice::parseMessage(const QLowEnergyCharacteristic& ch, const QByteAr
         const QByteArray message = m_messageBuffer.mid(0, len);
         m_messageBuffer = m_messageBuffer.mid(len);
 
-        // qCDebug(deviceLogger) << "received message:" << message.toHex();
+        qCDebug(deviceLogger) << "received message:" << message.toHex();
 
         const auto msg = message.constData();
 
@@ -448,10 +474,6 @@ void QLegoDevice::parseMessage(const QLowEnergyCharacteristic& ch, const QByteAr
             break;
         default:
             break;
-        }
-
-        if (m_messageBuffer.size() > 0) {
-            parseMessage(ch, QByteArray());
         }
     }
 }
@@ -670,15 +692,11 @@ void QLegoDevice::attachDevice(int portId, QLegoAttachedDevice* device)
 
 void QLegoDevice::requestPower(bool isOn)
 {
-    QByteArray bytes;
-    bytes.resize(2);
-    bytes[0] = 0x02;
     if (isOn) {
-        bytes[1] = 0x03;
+        requestHubActionValue(0x03);
     } else {
-        bytes[1] = 0x04;
+        requestHubActionValue(0x04);
     }
-    send(bytes);
 }
 
 QLegoAttachedDevice* QLegoDevice::waitForDeviceByName(const QString& name)
